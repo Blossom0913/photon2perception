@@ -1,0 +1,25 @@
+# Auto-generated feature spec (pb.txt). Do not hand-edit;
+# regenerate via `python -m photon2perception.utils.feature_spec` or
+# `tools/export_features.py --emit_spec_only`.
+group: "inputs"
+task: "segmentation"
+feature {
+  name: "bayer_raw"
+  dtype: "float32"
+  layout: "NCHW"
+  dim { name: "batch" size: -1 }
+  dim { name: "channel" size: 1 }
+  dim { name: "height" size: 512 }
+  dim { name: "width" size: 1024 }
+  description: "Bayer RAW input, CFA pattern=rggb, patch_size=16 (H and W must be divisible by it), normalized to [-1, 1]"
+}
+feature {
+  name: "raw_image_unnormalized"
+  dtype: "float32"
+  layout: "NCHW"
+  dim { name: "batch" size: -1 }
+  dim { name: "channel" size: 1 }
+  dim { name: "height" size: 512 }
+  dim { name: "width" size: 1024 }
+  description: "Optional unnormalized Bayer RAW in [0, 1], used only by PhysicalPriorRouter's local-variance saliency prior when model.use_sparse_routing=true and model.router_type=physical. If omitted at inference time, `bayer_raw` is reused."
+}

@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project overview
 
-This is the **photon2perception** research project — a full-stack PyTorch implementation of a brain-inspired, structure-preserving RAW image perception framework, alongside its paper manuscript (README.md), research idea sketch (prompts/idea.md), and an organized literature review of ~19 papers on RAW-domain computer vision. The codebase contains 29 Python modules implementing the complete pipeline from Bayer RAW tokenization through multi-task perception heads, with experiment management for 36 planned experiments.
+This is the **photon2perception** research project — a full-stack PyTorch implementation of a brain-inspired, structure-preserving RAW image perception framework, alongside its paper manuscript (README.md), research idea sketch (prompts/idea.md), and an organized literature review of ~19 papers on RAW-domain computer vision. The codebase implements the complete pipeline end-to-end: Bayer RAW tokenization → multi-task perception heads → real detection/segmentation losses → training/validation loop → COCO mAP / mIoU evaluation → TorchScript/ONNX export → a unified multi-backend inference API, with experiment management for 36 planned experiments.
 
 **Core research thesis:** Build a brain-inspired, efficient perception framework that operates directly on Bayer RAW tokens (preserving the 2D CFA structure), uses 2D RoPE for spatial position encoding with optional directional enhancement, and employs saliency/uncertainty-aware sparse routing to reduce latency, memory bandwidth, and compute while maintaining or improving multi-task perception performance.
 
@@ -21,14 +21,19 @@ photon2perception/
 │   │   ├── tokenization/              # BayerPatchEmbed, BayerFineTokenize
 │   │   ├── position_encoding/         # RoPE2D, CFAwareRoPE2D, DirectionalEnhance
 │   │   ├── routing/                   # SaliencyRouter, UncertaintyRouter, PhysicalPriorRouter
-│   │   ├── backbones/                 # RawViT (RAW-adapted Vision Transformer)
-│   │   └── heads/                     # RawDetectionHead, RawSegmentationHead
-│   ├── datasets/                      # BaseRAWDataset, SyntheticRAWDataset, UnprocessPipeline
+│   │   ├── backbones/                 # RawViT (RAW-adapted Vision Transformer; attn_backend sdpa/flash/math)
+│   │   ├── necks/                     # SimpleFeaturePyramidNeck (ViTDet-style 1D tokens -> multi-scale FPN)
+│   │   ├── heads/                     # RawDetectionHead, RawSegmentationHead, postprocess (NMS/argmax)
+│   │   └── model_wrapper.py           # PerceptionModel + build_perception_model (single source of truth)
+│   ├── datasets/                      # BaseRAWDataset, CocoRawDetectionDataset, CityscapesRawSegmentationDataset, UnprocessPipeline
 │   │   └── raw_transforms/            # Bayer-safe augmentations
-│   └── evaluation/                    # Efficiency metrics, benchmark runner
+│   ├── losses/                        # DetectionLoss (focal+L1/GIoU), SegmentationLoss (CE+RMI)
+│   ├── evaluation/                    # DetectionEvaluator (mAP), SegmentationEvaluator (mIoU), efficiency.py
+│   ├── utils/                         # config, checkpoint, distributed (DDP), logger, registry
+│   └── inference.py                   # PerceptionInferencer: pytorch/torchscript/onnxruntime/tensorrt backends
 ├── configs/                           # YAML config files (detection, segmentation)
-├── tools/                             # train.py, run_experiments.py, visualize.py
-├── tests/                             # Unit tests (test_core.py)
+├── tools/                             # train.py, eval.py, export.py, run_experiments.py, visualize.py
+├── tests/                             # Unit tests: test_core.py (model/arch), test_infra.py (train/eval/export/infer pipeline)
 ├── scripts/                           # AutoDL setup & batch experiment scripts
 │   ├── setup_autodl.sh                # One-click AutoDL environment setup
 │   └── run_experiment_batch.sh        # Batch experiment runner (5 batches)
@@ -51,18 +56,25 @@ Bayer RAW (B,1,H,W)
   → CFA phase embeddings added
   → [Optional] DirectionalEnhance (gated residual)
   → [Optional] Sparse routing (saliency/uncertainty/physical)
-  → RawViT blocks (with 2D RoPE in attention)
+  → RawViT blocks (2D RoPE applied to patch tokens only, CLS token excluded; attn_backend sdpa/flash/math)
   → CLS token + hidden states
-  → Task head (detection or segmentation)
+  → PerceptionModel: Neck (SimpleFeaturePyramidNeck, detection only) → Task head
+  → detection: (cls_scores, bbox_preds) per FPN level | segmentation: (B, num_classes, H, W) logits
 ```
+
+`PerceptionModel` (`photon2perception/models/model_wrapper.py`) is the single `backbone -> neck -> head`
+`nn.Module` used unmodified by `tools/train.py`, `tools/eval.py`, `tools/export.py`, and
+`photon2perception/inference.py` — this is what keeps train/eval/export from drifting apart. Always
+construct models via `build_perception_model(config)` rather than instantiating `RawViT`/heads directly.
 
 ### Key design decisions
 
 1. **BayerPatchEmbed** requires even patch_size to capture complete 2×2 Bayer quads.
-2. **2D RoPE** splits embedding into 4 equal parts: x-axis, y-axis, diagonal, anti-diagonal frequencies.
-3. **Sparse routing** uses a gated combination of learned saliency + physical prior (local variance in RAW values). The `PhysicalPriorRouter` is the key differentiator from generic token pruning.
+2. **2D RoPE** splits embedding into 4 equal parts: x-axis, y-axis, diagonal, anti-diagonal frequencies. It is applied once over the full `embed_dim` (all heads share the same rotation, per `apply_shared_rope_multihead` in `raw_vit.py`), and only to patch tokens — the CLS token is split off before rotation and re-concatenated after, since it has no 2D spatial position.
+3. **Sparse routing** uses a gated combination of learned saliency + physical prior (local variance in RAW values). The `PhysicalPriorRouter` is the key differentiator from generic token pruning. **Important:** routing is only active during `.eval()`/inference if the backbone was built with `route_at_inference=True` (default `False`, for backward compatibility). Check `PerceptionModel.routing_active` before assuming an exported/deployed model actually runs sparse — `tools/export.py` asserts on this and fails loudly for a misconfigured `use_sparse_routing=True, route_at_inference=False` model, since that would silently export a dense graph.
 4. **DirectionalEnhance** is gated with `tanh(gate)` and initialized at 0 (disabled at start).
-5. **All experiments must report efficiency alongside accuracy** — latency, FLOPs, memory, and input bandwidth are first-class metrics.
+5. **All experiments must report efficiency alongside accuracy** — latency, FLOPs, memory, and input bandwidth are first-class metrics (`photon2perception/evaluation/efficiency.py`, CUDA/MPS/CPU-safe — peak memory is CUDA-only and reported as 0.0 elsewhere rather than raising).
+6. **Attention backend is switchable** (`attn_backend`: `'sdpa'` default / `'flash'` / `'math'`) via `RawViT.set_attn_backend()` — useful to force `'math'` before ONNX export/NPU targets that don't support the fused SDPA op, while using `'sdpa'`/`'flash'` for actual GPU training.
 
 ### Running the code
 
@@ -70,34 +82,65 @@ Bayer RAW (B,1,H,W)
 
 ```bash
 # Install dependencies (Python 3.8+)
-pip install torch torchvision rawpy pyyaml matplotlib scipy
+pip install -r requirements.txt
 
-# Run tests (all 19 should pass)
-python -m pytest tests/test_core.py -v
+# Run the full test suite (82 tests: test_core.py = model/architecture,
+# test_infra.py = train/eval/export/inference pipeline)
+python -m pytest tests/ -v
 ```
 
-**On a CPU-only machine (local development):**
+**On a CPU-only machine (local development, incl. Apple Silicon/MPS):**
 
 ```bash
-# Install CPU PyTorch
+# Install CPU PyTorch (or use the Miniconda env described below)
 conda install pytorch==2.1.0 torchvision==0.16.0 cpuonly -c pytorch
+pip install -r requirements.txt
 
-# Run tests — TestSanityCheck::test_overfit_tiny_batch will fail on CPU,
-# the other 18 tests should pass
-python -m pytest tests/test_core.py -v -k "not test_overfit_tiny_batch"
+# Run tests — TestSanityCheck::test_overfit_tiny_batch (test_core.py) will
+# fail on CPU (needs a GPU to converge in the test's step budget); all other
+# tests, including the full test_infra.py infra suite, pass on CPU.
+python -m pytest tests/ -v -k "not test_overfit_tiny_batch"
 ```
 
+```bash
 # List all experiments
 python tools/run_experiments.py list
 
 # Dry-run a single experiment
 python tools/run_experiments.py dry-run --exp-id E01
 
-# Train a model
+# Train a model (supports CPU/MPS/single-GPU/DDP multi-GPU; auto-resume,
+# mixed precision, checkpointing, and console+file[+TB/W&B] logging --
+# see tools/train.py's module docstring)
 python tools/train.py --config configs/detection/photon2percept_det_bayer.yaml
+python tools/train.py --config configs/detection/photon2percept_det_bayer.yaml \
+    --override training.epochs=5 data.batch_size=2 --output_dir ./outputs/debug
+
+# Evaluate a checkpoint (COCO mAP / mIoU + efficiency report)
+python tools/eval.py --config configs/detection/photon2percept_det_bayer.yaml \
+    --checkpoint outputs/photon2percept_det_bayer/checkpoint_best.pth
+
+# Export to TorchScript + ONNX (with numerical parity verification)
+python tools/export.py --config configs/detection/photon2percept_det_bayer.yaml \
+    --checkpoint outputs/photon2percept_det_bayer/checkpoint_best.pth \
+    --format both --output exported/det_bayer
 
 # Generate visualizations
 python tools/visualize.py
+```
+
+**Inference (any backend, same API):**
+
+```python
+from photon2perception.inference import PerceptionInferencer
+
+inferencer = PerceptionInferencer(
+    config_path='configs/detection/photon2percept_det_bayer.yaml',
+    backend='onnxruntime',  # or 'pytorch' / 'torchscript' / 'tensorrt'
+    weights_path='exported/det_bayer.onnx',
+)
+detections = inferencer.predict(raw_bayer_image)  # list of dicts: boxes/scores/labels
+stats = inferencer.benchmark()  # latency/FPS
 ```
 
 ### Environment setup
@@ -112,8 +155,9 @@ conda activate photon2perception
 # Install PyTorch (CUDA 11.8 — adjust for your CUDA version)
 conda install pytorch==2.1.0 torchvision==0.16.0 pytorch-cuda=11.8 -c pytorch -c nvidia
 
-# Install core dependencies
-pip install rawpy pyyaml matplotlib scipy fvcore pytest
+# Install core dependencies (see requirements.txt for the full/authoritative list,
+# including pycocotools for dataset loading and onnx/onnxruntime for export+inference)
+pip install -r requirements.txt
 
 # Optional: install mmdetection & mmsegmentation for full dataset/eval support
 pip install openmim
@@ -121,7 +165,7 @@ mim install mmdet==3.3.0 mmsegmentation==1.2.0
 
 # Verify installation
 python -c "import torch; print(f'PyTorch {torch.__version__}, CUDA: {torch.cuda.is_available()}')"
-python -m pytest tests/test_core.py -v
+python -m pytest tests/ -v
 ```
 
 **Conda environment export / restore:**
@@ -164,7 +208,7 @@ RUN pip install --no-cache-dir openmim && \
 COPY . .
 
 # Entry point
-CMD ["python", "-m", "pytest", "tests/test_core.py", "-v"]
+CMD ["python", "-m", "pytest", "tests/", "-v"]
 ```
 
 **Build and run:**
@@ -290,16 +334,51 @@ Papers in `reference_pdf/` cover these themes:
 
 Each paper has a corresponding Chinese summary in `reference_pdf/summary_notes/`.
 
-## Known gaps — must fix before real training
+## Infrastructure status (previously "Known gaps", now resolved)
 
-The core model architecture (BayerPatchEmbed, RoPE2D, RawViT, routing, detection/segmentation heads) is fully implemented and tested. However, the training pipeline has placeholder stubs that need to be completed before running actual experiments:
+The full pipeline — architecture, losses, dataset loading, training, validation, evaluation, export, and
+inference — is implemented and covered by 82 passing unit tests (`tests/test_core.py` +
+`tests/test_infra.py`) plus an end-to-end smoke test (tiny COCO-format dataset through
+train → eval → export → inference on CPU). What used to be placeholder stubs is now:
 
-1. **Training loss is a dummy** ([tools/train.py:155](tools/train.py#L155)): `loss = cls_token.sum() * 0.0`. Must implement the actual detection loss (Focal loss + L1 regression) and segmentation loss (CrossEntropy + RMI).
-2. **Dataset loading raises NotImplementedError** ([tools/train.py:113](tools/train.py#L113)): The synthetic dataset path needs a real RGB dataset loader — either integrate COCO/Cityscapes via mmdet/mmseg dataset classes, or implement a standalone loader.
-3. **Detection head expects 2D features** but RawViT backbone outputs 1D CLS token + hidden states. Need a feature reshaping/upsampling bridge (or use dense prediction heads like Segmenter/DPT style).
-4. **No validation loop**: `build_dataloaders` returns `None` for val_loader.
-5. **No mixed precision wiring**: Config has `mixed_precision: false` but `train.py` never wraps forward pass in `torch.cuda.amp.autocast`. Enabling AMP would reduce VRAM by ~30%.
-6. **No logging backend**: Despite docstring claims, there is no WandB/TensorBoard integration — only `print()` statements.
+1. **Real losses** (`photon2perception/losses/`): `DetectionLoss` (focal classification + L1/GIoU box
+   regression, anchor-based) and `SegmentationLoss` (CrossEntropy + RMI, optional auxiliary head loss).
+   Wired into `tools/train.py` via `build_loss(config)`.
+2. **Real dataset loading** (`photon2perception/datasets/coco_raw_dataset.py`): `CocoRawDetectionDataset`
+   and `CityscapesRawSegmentationDataset`, standalone loaders (no mmdet/mmseg dependency) that read
+   COCO-format / Cityscapes-format annotations and synthesize Bayer RAW on-the-fly via `UnprocessPipeline`.
+   Selected via `data.type: coco|cityscapes|real` in the YAML config (`synthetic` is a back-compat alias).
+   Requires `pycocotools` for the COCO path (see requirements.txt).
+3. **Backbone/head bridge solved via `PerceptionModel`** (`photon2perception/models/model_wrapper.py`):
+   `SimpleFeaturePyramidNeck` (ViTDet-style Simple Feature Pyramid) converts RawViT's 1D token sequence
+   into a multi-scale 2D feature pyramid for the detection head; the segmentation head consumes the
+   last hidden state's patch tokens directly. `build_perception_model(config)` is the single
+   config-dict-to-nn.Module constructor used by train/eval/export — do not hand-assemble
+   backbone+neck+head elsewhere.
+4. **Real validation loop**: `build_dataloaders` in `tools/train.py` returns a proper `val_loader`;
+   `tools/eval.py` runs full COCO mAP (`DetectionEvaluator`, pycocotools-based with an approx-AP50
+   fallback) or mIoU (`SegmentationEvaluator`) plus an efficiency report.
+5. **Mixed precision wired**: `training.mixed_precision: true` wraps the forward pass in
+   `torch.autocast` + `GradScaler` in `tools/train.py`.
+6. **Unified logging**: `photon2perception/utils/logger.py`'s `ExperimentLogger` writes to
+   console + a log file, with optional TensorBoard/W&B backends (`--use_wandb`), replacing bare `print()`.
+
+### Things to double-check before a real (non-smoke) training run
+
+- **Sparse routing at inference**: routing only runs during `.eval()`/export if the model config sets
+  `route_at_inference: true` (default `false`). See "Key design decisions" #3 above — an experiment
+  ablating sparse routing must set this explicitly, or the exported/evaluated model will silently run dense.
+- **`torch.load` and checkpoints**: checkpoints embed a `ConfigDict` and other non-tensor state, so
+  `photon2perception/utils/checkpoint.py` loads with `weights_only=False` — only load checkpoints you
+  trust (own training runs / vetted releases).
+- **ONNX export defaults to the legacy TorchScript-tracing exporter** (`dynamo=False`) for broader
+  onnxruntime/vendor-NPU-toolchain compatibility; pass `--onnx_dynamo` to opt into the newer
+  torch.export-based exporter once a target toolchain is confirmed to support it.
+- **`data.batch_size` and full-scale configs**: `configs/{detection,segmentation}/*.yaml` use
+  production-scale settings (`embed_dim: 768`, `img_size: [512, 512]`, real COCO paths under
+  `data.train_img_dir`/`train_ann_file`). For local CPU iteration/smoke-testing, override with a tiny
+  config (small `embed_dim`/`img_size`/`depth`, `data.batch_size=1-2`) rather than running the full
+  config on CPU.
 
 ## Working with this repo
 
@@ -308,3 +387,20 @@ When asked to help with the research:
 - The paper outline in README.md is the authoritative structure; changes to the research direction should be reflected there.
 - New paper summaries added to `reference_pdf/summary_notes/` should follow the existing naming convention: `论文概括：{English title} — {Chinese description}.md`.
 - When discussing experimental design, reference the ablation structure in README.md §4.3.
+
+When asked to change code:
+- Run `python -m pytest tests/ -v` after any change under `photon2perception/` or `tools/` — the 82-test
+  suite (`test_core.py` + `test_infra.py`) is fast (~10s on CPU) and covers both architecture correctness
+  and the full train/eval/export/inference pipeline, so it catches regressions immediately.
+- Always go through `build_perception_model(config)` (`photon2perception/models/model_wrapper.py`) to
+  construct a model, rather than instantiating `RawViT`/heads/neck directly — this is what keeps
+  `tools/train.py`, `tools/eval.py`, `tools/export.py`, and `photon2perception/inference.py` in sync.
+- If you touch anything that affects the forward pass under tracing (control flow depending on a tensor
+  value, `.item()`, Python-side shape branching), re-run the export smoke tests
+  (`tests/test_infra.py::TestExportScript`) specifically — they exercise `tools/export.py` end-to-end via
+  subprocess and assert TorchScript/ONNX numerical parity against eager mode.
+- For a genuine end-to-end smoke test beyond unit tests (real `tools/train.py` → `tools/eval.py` →
+  `tools/export.py` → `photon2perception.inference.PerceptionInferencer` CLI invocations), generate a
+  tiny COCO-format dataset (a handful of small images + a matching `annotations.json`) and a tiny model
+  config (small `embed_dim`/`depth`/`img_size`, `data.batch_size=1-2`, `training.epochs=1`) in a scratch
+  directory — this is fast on CPU and validates the actual CLI entry points, not just importable functions.

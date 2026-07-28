@@ -46,6 +46,7 @@ from photon2perception.datasets.coco_raw_dataset import (
     detection_collate_fn,
     segmentation_collate_fn,
 )
+from photon2perception.datasets.exported_feature_dataset import try_build_preexported_dataset
 from photon2perception.losses.detection_loss import DetectionLoss
 from photon2perception.losses.segmentation_loss import SegmentationLoss
 from photon2perception.models.model_wrapper import PerceptionModel, build_perception_model
@@ -75,8 +76,12 @@ def parse_args():
     parser.add_argument('--exp_name', type=str, default=None,
                          help='Experiment name (subdirectory of output_dir); defaults to the config filename stem')
     parser.add_argument('--seed', type=int, default=42, help='Random seed')
-    parser.add_argument('--use_wandb', action='store_true', help='Enable Weights & Biases logging')
-    parser.add_argument('--wandb_project', type=str, default='photon2perception')
+    parser.add_argument('--use_wandb', action='store_true', default=None,
+                         help='Enable Weights & Biases logging (overrides config.logging.use_wandb)')
+    parser.add_argument('--no_tensorboard', action='store_true',
+                         help='Disable TensorBoard logging (overrides config.logging.use_tensorboard)')
+    parser.add_argument('--wandb_project', type=str, default=None,
+                         help='Overrides config.logging.wandb_project')
     parser.add_argument(
         '--override', nargs='+', default=None,
         help="Dotted-key config overrides, e.g. training.epochs=5 data.batch_size=2",
@@ -107,6 +112,27 @@ def build_dataloaders(config, dist_info: DistributedInfo):
         dataset_type = 'coco' if task == 'detection' else 'cityscapes'
 
     img_size = tuple(data_cfg.get('img_scale', config['model']['img_size']))
+    collate_fn = detection_collate_fn if task == 'detection' else segmentation_collate_fn
+
+    # Prefer pre-exported feature shards (tools/export_features.py /
+    # scripts/local_feature_exporter.sh) over the live on-the-fly dataset
+    # when `feature_export.enabled: true` AND a manifest is actually present
+    # on disk for a given split -- this skips re-running resize + Bayer
+    # unprocessing on every `__getitem__` call. Falls back silently to the
+    # live dataset for a split with no exported manifest (e.g. only `train`
+    # was exported), so partially-exported setups still work.
+    feature_export_cfg = config.get('feature_export', {})
+    pre_train = try_build_preexported_dataset(feature_export_cfg, split='train')
+    pre_val = try_build_preexported_dataset(feature_export_cfg, split='val')
+    if pre_train is not None or pre_val is not None:
+        train_loader = _make_dataloader(
+            pre_train, data_cfg, dist_info, shuffle=True, collate_fn=collate_fn,
+        ) if pre_train is not None else None
+        val_loader = _make_dataloader(
+            pre_val, data_cfg, dist_info, shuffle=False, collate_fn=collate_fn,
+        ) if pre_val is not None else None
+        if train_loader is not None:
+            return train_loader, val_loader
 
     if dataset_type == 'coco':
         train_dataset = CocoRawDetectionDataset(
@@ -125,7 +151,6 @@ def build_dataloaders(config, dist_info: DistributedInfo):
                 cfa_pattern=data_cfg.get('cfa_pattern', 'rggb'),
                 normalize=data_cfg.get('normalize', True),
             )
-        collate_fn = detection_collate_fn
     elif dataset_type == 'cityscapes':
         train_dataset = CityscapesRawSegmentationDataset(
             root_dir=data_cfg['root_dir'],
@@ -143,39 +168,42 @@ def build_dataloaders(config, dist_info: DistributedInfo):
             normalize=data_cfg.get('normalize', True),
             num_classes=data_cfg['num_classes'],
         )
-        collate_fn = segmentation_collate_fn
     elif dataset_type == 'real':
         train_dataset = BaseRAWDataset(root_dir=data_cfg['root_dir'], split='train')
         val_dataset = BaseRAWDataset(root_dir=data_cfg['root_dir'], split='val')
-        collate_fn = detection_collate_fn if task == 'detection' else segmentation_collate_fn
     else:
         raise ValueError(f"Unknown data.type '{dataset_type}'")
 
-    def _make_loader(dataset, shuffle):
-        if dataset is None:
-            return None
-        if dist_info.world_size > 1:
-            sampler = DistributedSampler(
-                dataset, num_replicas=dist_info.world_size, rank=dist_info.rank, shuffle=shuffle
-            )
-            use_shuffle = False
-        else:
-            sampler = None
-            use_shuffle = shuffle
-        return DataLoader(
-            dataset,
-            batch_size=data_cfg['batch_size'],
-            shuffle=use_shuffle,
-            sampler=sampler,
-            num_workers=data_cfg.get('num_workers', 4),
-            pin_memory=torch.cuda.is_available(),
-            drop_last=shuffle,
-            collate_fn=collate_fn,
-        )
-
-    train_loader = _make_loader(train_dataset, shuffle=True)
-    val_loader = _make_loader(val_dataset, shuffle=False)
+    train_loader = _make_dataloader(train_dataset, data_cfg, dist_info, shuffle=True, collate_fn=collate_fn)
+    val_loader = _make_dataloader(val_dataset, data_cfg, dist_info, shuffle=False, collate_fn=collate_fn)
     return train_loader, val_loader
+
+
+def _make_dataloader(dataset, data_cfg, dist_info: DistributedInfo, shuffle: bool, collate_fn):
+    """Shared `DataLoader` construction for both the live on-the-fly
+    datasets and `PreExportedFeatureDataset` -- identical batching/sampling
+    behavior regardless of which dataset backend is in play.
+    """
+    if dataset is None:
+        return None
+    if dist_info.world_size > 1:
+        sampler = DistributedSampler(
+            dataset, num_replicas=dist_info.world_size, rank=dist_info.rank, shuffle=shuffle
+        )
+        use_shuffle = False
+    else:
+        sampler = None
+        use_shuffle = shuffle
+    return DataLoader(
+        dataset,
+        batch_size=data_cfg['batch_size'],
+        shuffle=use_shuffle,
+        sampler=sampler,
+        num_workers=data_cfg.get('num_workers', 4),
+        pin_memory=torch.cuda.is_available(),
+        drop_last=shuffle,
+        collate_fn=collate_fn,
+    )
 
 
 # ----------------------------------------------------------------------------
@@ -268,9 +296,29 @@ def move_targets_to_device(targets, task, device):
     return targets.to(device)
 
 
+def log_input_sample(logger: ExperimentLogger, images: torch.Tensor, step: int, tag: str = 'train/input_sample') -> None:
+    """Log a single Bayer RAW input (first sample of the batch) as a
+    grayscale image to TensorBoard/W&B, for at-a-glance sanity checking of
+    what the model actually sees (correct CFA tiling, normalization range,
+    augmentation not degenerate, etc.) alongside the scalar loss curves.
+
+    Gated by `config['logging']['log_images']` / `image_log_interval` (see
+    `train_one_epoch`); a no-op if the logger has no active image backend.
+    """
+    # images are normalized to [-1, 1] by the dataset pipeline (see
+    # BaseRAWDataset / CocoRawDetectionDataset); undo that for display.
+    sample = images[0].detach().float().cpu()
+    sample = (sample.clamp(-1, 1) + 1.0) / 2.0  # -> [0, 1]
+    # ExperimentLogger.log_image expects HWC; a single-channel Bayer image
+    # is (1, H, W) -> (H, W, 1), broadcastable as grayscale by most viewers.
+    image_hwc = sample.permute(1, 2, 0).numpy()
+    logger.log_image(tag, image_hwc, step)
+
+
 def train_one_epoch(
     model, dataloader, optimizer, scheduler, loss_fn, task,
     device, epoch, dist_info, logger, scaler, grad_clip, log_interval, global_step,
+    log_images: bool = False, image_log_interval: int = 200,
 ):
     model.train()
     tracker = MetricTracker()
@@ -315,6 +363,9 @@ def train_one_epoch(
             logger.log_scalars({**scalar_loss_dict, 'lr': lr}, step=global_step, prefix='train/')
             logger.log(f"Epoch {epoch} | Batch {batch_idx}/{len(dataloader)} | "
                        f"loss_total={scalar_loss_dict['loss_total']:.4f} | lr={lr:.6f}")
+
+        if dist_info.is_main_process and log_images and global_step % image_log_interval == 0:
+            log_input_sample(logger, images, step=global_step)
 
         global_step += 1
 
@@ -370,11 +421,21 @@ def main():
         output_dir.mkdir(parents=True, exist_ok=True)
         save_config(config, str(output_dir / 'resolved_config.yaml'))
 
+    # `config['logging']` supplies defaults (so a config file alone fully
+    # determines visualization behavior, e.g. for scripts/train_local.sh /
+    # scripts/train_debug.sh); CLI flags (--use_wandb/--no_tensorboard/
+    # --wandb_project) override those defaults when explicitly passed.
+    logging_cfg = config.get('logging', {})
+    use_tensorboard = logging_cfg.get('use_tensorboard', True) and not args.no_tensorboard
+    use_wandb = args.use_wandb if args.use_wandb is not None else logging_cfg.get('use_wandb', False)
+    wandb_project = args.wandb_project or logging_cfg.get('wandb_project', 'photon2perception')
+
     logger = ExperimentLogger(
         log_dir=str(output_dir),
         exp_name=exp_name,
-        use_wandb=args.use_wandb,
-        wandb_project=args.wandb_project,
+        use_tensorboard=use_tensorboard,
+        use_wandb=use_wandb,
+        wandb_project=wandb_project,
         config=dict(config),
         rank=dist_info.rank,
     )
@@ -432,6 +493,8 @@ def main():
         train_metrics, global_step = train_one_epoch(
             model, train_loader, optimizer, scheduler, loss_fn, task, device,
             epoch, dist_info, logger, scaler, grad_clip, log_interval, global_step,
+            log_images=logging_cfg.get('log_images', False),
+            image_log_interval=logging_cfg.get('image_log_interval', 200),
         )
         if dist_info.is_main_process:
             logger.log(f"Epoch {epoch} done | " + ' '.join(f"{k}={v:.4f}" for k, v in train_metrics.items()))

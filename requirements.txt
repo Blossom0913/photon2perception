@@ -23,6 +23,13 @@ pycocotools>=2.0.6
 fvcore>=0.1.5
 # thop>=0.1.1
 
+# Training visualization: photon2perception/utils/logger.py's ExperimentLogger
+# logs scalars/images here by default (config.logging.use_tensorboard: true);
+# gracefully degrades to console+file-only logging if not installed.
+tensorboard>=2.13.0
+# Optional: Weights & Biases (config.logging.use_wandb: true / --use_wandb)
+# wandb>=0.15.0
+
 # Model export / inference: tools/export.py, photon2perception/inference.py
 onnx>=1.14.0
 onnxruntime>=1.15.0

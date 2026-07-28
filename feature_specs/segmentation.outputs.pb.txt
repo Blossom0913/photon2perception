@@ -1,0 +1,15 @@
+# Auto-generated feature spec (pb.txt). Do not hand-edit;
+# regenerate via `python -m photon2perception.utils.feature_spec` or
+# `tools/export_features.py --emit_spec_only`.
+group: "outputs"
+task: "segmentation"
+feature {
+  name: "seg_logits"
+  dtype: "float32"
+  layout: "NCHW"
+  dim { name: "batch" size: -1 }
+  dim { name: "channel" size: 19 }
+  dim { name: "height" size: 512 }
+  dim { name: "width" size: 1024 }
+  description: "Per-pixel class logits (pre-softmax/argmax)"
+}

@@ -1,0 +1,85 @@
+# Auto-generated feature spec (pb.txt). Do not hand-edit;
+# regenerate via `python -m photon2perception.utils.feature_spec` or
+# `tools/export_features.py --emit_spec_only`.
+group: "outputs"
+task: "detection"
+feature {
+  name: "cls_scores_0"
+  dtype: "float32"
+  layout: "NCHW"
+  dim { name: "batch" size: -1 }
+  dim { name: "channel" size: 9 }
+  dim { name: "height" size: 16 }
+  dim { name: "width" size: 24 }
+  description: "Classification logits, FPN level 0, stride=4"
+}
+feature {
+  name: "bbox_preds_0"
+  dtype: "float32"
+  layout: "NCHW"
+  dim { name: "batch" size: -1 }
+  dim { name: "channel" size: 36 }
+  dim { name: "height" size: 16 }
+  dim { name: "width" size: 24 }
+  description: "Box regression (dx, dy, dw, dh), FPN level 0, stride=4"
+}
+feature {
+  name: "cls_scores_1"
+  dtype: "float32"
+  layout: "NCHW"
+  dim { name: "batch" size: -1 }
+  dim { name: "channel" size: 9 }
+  dim { name: "height" size: 8 }
+  dim { name: "width" size: 12 }
+  description: "Classification logits, FPN level 1, stride=8"
+}
+feature {
+  name: "bbox_preds_1"
+  dtype: "float32"
+  layout: "NCHW"
+  dim { name: "batch" size: -1 }
+  dim { name: "channel" size: 36 }
+  dim { name: "height" size: 8 }
+  dim { name: "width" size: 12 }
+  description: "Box regression (dx, dy, dw, dh), FPN level 1, stride=8"
+}
+feature {
+  name: "cls_scores_2"
+  dtype: "float32"
+  layout: "NCHW"
+  dim { name: "batch" size: -1 }
+  dim { name: "channel" size: 9 }
+  dim { name: "height" size: 4 }
+  dim { name: "width" size: 6 }
+  description: "Classification logits, FPN level 2, stride=16"
+}
+feature {
+  name: "bbox_preds_2"
+  dtype: "float32"
+  layout: "NCHW"
+  dim { name: "batch" size: -1 }
+  dim { name: "channel" size: 36 }
+  dim { name: "height" size: 4 }
+  dim { name: "width" size: 6 }
+  description: "Box regression (dx, dy, dw, dh), FPN level 2, stride=16"
+}
+feature {
+  name: "cls_scores_3"
+  dtype: "float32"
+  layout: "NCHW"
+  dim { name: "batch" size: -1 }
+  dim { name: "channel" size: 9 }
+  dim { name: "height" size: 2 }
+  dim { name: "width" size: 3 }
+  description: "Classification logits, FPN level 3, stride=32"
+}
+feature {
+  name: "bbox_preds_3"
+  dtype: "float32"
+  layout: "NCHW"
+  dim { name: "batch" size: -1 }
+  dim { name: "channel" size: 36 }
+  dim { name: "height" size: 2 }
+  dim { name: "width" size: 3 }
+  description: "Box regression (dx, dy, dw, dh), FPN level 3, stride=32"
+}

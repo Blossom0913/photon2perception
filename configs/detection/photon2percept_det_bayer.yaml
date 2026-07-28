@@ -20,9 +20,37 @@ model:
   router_type: saliency        # Router type: saliency, uncertainty, physical
   keep_ratio: 0.7              # Token keep ratio for sparse routing
 
+# ----------------------------------------------------------------------------
+# Input/output feature shapes
+# ----------------------------------------------------------------------------
+# Every tensor this model consumes/produces is also machine-readably
+# described in a pair of `.pb.txt` files (protobuf-text-style, see
+# `photon2perception/utils/feature_spec.py`), so tooling that isn't Python
+# (a feature store, an NPU/edge deployment toolchain, a data-validation
+# job) has a single source of truth for exact tensor names/shapes/dtypes
+# without needing to import this project or parse this YAML.
+#
+# Regenerate both files any time `model.img_size`/`patch_size`/`in_chans`/
+# `data.num_classes`/neck settings change, via:
+#   python -m photon2perception.utils.feature_spec \
+#       --config configs/detection/photon2percept_det_bayer.yaml \
+#       --output_dir feature_specs
+# or the wrapper script `scripts/local_feature_exporter.sh --spec_only`.
+features:
+  spec_dir: feature_specs                              # Directory holding the generated .pb.txt files
+  inputs_pbtxt: feature_specs/detection.inputs.pb.txt   # Input tensor shapes (bayer_raw, raw_image_unnormalized)
+  outputs_pbtxt: feature_specs/detection.outputs.pb.txt # Output tensor shapes (cls_scores_i, bbox_preds_i per FPN level)
+  # Human-readable summary (kept in sync with the .pb.txt files by
+  # `photon2perception.utils.feature_spec.build_input_feature_specs`);
+  # useful as an at-a-glance reference when reading this config, but the
+  # .pb.txt files above are the authoritative, tool-consumable source.
+  input_shapes:
+    bayer_raw: [-1, 1, 512, 512]              # (N, C=in_chans, H, W), N=-1 is dynamic batch
+    raw_image_unnormalized: [-1, 1, 512, 512] # optional, only used by PhysicalPriorRouter
+
 # Data configuration
 data:
-  type: synthetic              # Dataset type: real, synthetic
+  type: synthetic              # Dataset type: real, synthetic, coco, cityscapes
   root_dir: ./data             # Dataset root directory
   num_classes: 80              # Number of object classes
   batch_size: 8                # Batch size per GPU
@@ -33,11 +61,25 @@ data:
   condition: normal            # Condition: normal, dark, over_exp
   normalize: true              # Normalize pixels to [-1, 1]
   img_scale: [512, 512]        # Image scale for training
+  feature_spec_name: detection # Basename used for generated feature-spec pb.txt files
   augmentation:                # Data augmentation settings
     random_crop: true
     random_flip: true
     exposure_jitter: true
     noise_inject: false         # Only for real RAW datasets
+
+# Feature export configuration (tools/export_features.py /
+# scripts/local_feature_exporter.sh): converts raw source images/RAW files
+# into training-ready tensors (Bayer-mosaicked, normalized) cached on disk,
+# so `tools/train.py` can optionally read pre-exported `.pt` shards instead
+# of re-running the unprocessing pipeline on every epoch.
+feature_export:
+  enabled: false                       # Set true to have train.py prefer pre-exported tensors, if present
+  output_dir: ./data/features/detection # Where exported .pt tensor shards + manifest.json are written
+  format: pt                           # Exported tensor file format: pt (torch.save) or npy
+  shard_size: 256                      # Samples per shard file (avoids millions of tiny files)
+  num_workers: 4                       # Parallel workers for the export job
+  verify_against_pbtxt: true           # Assert exported tensor shapes match features.inputs_pbtxt
 
 # Training configuration
 training:
@@ -66,3 +108,12 @@ efficiency:
   target_latency_ms: 30        # Target inference latency (ms)
   target_flops_g: 50           # Target FLOPs (GFLOPs)
   target_memory_mb: 4000       # Target GPU memory (MB)
+
+# Training visualization / experiment logging
+# (photon2perception.utils.logger.ExperimentLogger)
+logging:
+  use_tensorboard: true        # Log scalars/images to TensorBoard (./outputs/<exp>/tensorboard)
+  use_wandb: false             # Log to Weights & Biases (needs `wandb login`; also settable via --use_wandb)
+  wandb_project: photon2perception
+  log_images: true             # Periodically log input/prediction visualizations (tools/visualize.py hooks)
+  image_log_interval: 200      # Log an image sample every N training steps

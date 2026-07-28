@@ -18,6 +18,23 @@ model:
   router_type: saliency
   keep_ratio: 0.7
 
+# ----------------------------------------------------------------------------
+# Input/output feature shapes
+# ----------------------------------------------------------------------------
+# See configs/detection/photon2percept_det_bayer.yaml's `features` block for
+# the full rationale. Regenerate the .pb.txt files whenever `model.img_size`/
+# `patch_size`/`in_chans`/`data.num_classes` change:
+#   python -m photon2perception.utils.feature_spec \
+#       --config configs/segmentation/photon2percept_seg_bayer.yaml \
+#       --output_dir feature_specs
+features:
+  spec_dir: feature_specs
+  inputs_pbtxt: feature_specs/segmentation.inputs.pb.txt   # bayer_raw, raw_image_unnormalized
+  outputs_pbtxt: feature_specs/segmentation.outputs.pb.txt # seg_logits (B, num_classes, H, W)
+  input_shapes:
+    bayer_raw: [-1, 1, 512, 1024]
+    raw_image_unnormalized: [-1, 1, 512, 1024]
+
 data:
   type: synthetic
   root_dir: ./data
@@ -30,6 +47,18 @@ data:
   condition: normal
   normalize: true
   img_scale: [512, 1024]
+  feature_spec_name: segmentation
+
+# Feature export configuration (tools/export_features.py /
+# scripts/local_feature_exporter.sh). See the detection config for the full
+# field documentation.
+feature_export:
+  enabled: false
+  output_dir: ./data/features/segmentation
+  format: pt
+  shard_size: 128
+  num_workers: 4
+  verify_against_pbtxt: true
 
 training:
   epochs: 80
@@ -40,6 +69,9 @@ training:
   lr_power: 0.9
   grad_clip: 1.0
   mixed_precision: false
+  log_interval: 10
+  save_interval: 5
+  val_interval: 1
 
 loss:
   seg_loss: ce                  # Segmentation loss: ce, ohem, lovasz
@@ -50,3 +82,12 @@ efficiency:
   target_latency_ms: 50
   target_flops_g: 80
   target_memory_mb: 6000
+
+# Training visualization / experiment logging
+# (photon2perception.utils.logger.ExperimentLogger)
+logging:
+  use_tensorboard: true
+  use_wandb: false
+  wandb_project: photon2perception
+  log_images: true
+  image_log_interval: 200
