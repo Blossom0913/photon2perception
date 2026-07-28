@@ -40,7 +40,11 @@ def precompute_2d_freqs_cis(
     This captures both axial and diagonal spatial relationships.
 
     Args:
-        dim: Embedding dimension (must be divisible by 4 for 2D split)
+        dim: Embedding dimension (must be divisible by 8: `apply_rotary_embedding`
+            splits the D-dim vector into two D/2 halves for the rotation, and
+            this function further splits each half's angle table into 4
+            equal bands (x/y/diag/anti-diag), so D/2 must itself be
+            divisible by 4).
         grid_h: Number of tokens along height
         grid_w: Number of tokens along width
         theta: Base frequency (10000.0 standard, larger = lower freqs)
@@ -48,15 +52,19 @@ def precompute_2d_freqs_cis(
         cfa_aware: If True, use different base frequencies for different CFA phases
 
     Returns:
-        freqs_cis: (grid_h, grid_w, dim//2) complex-like tensor (real, imag stacked)
+        freqs_cis: (grid_h, grid_w, dim//2) angle tensor. Concatenating 4
+            bands of width `dim//8` each yields exactly `dim//2`, matching
+            what `apply_rotary_embedding` expects (it rotates D-dim vectors
+            using a `(..., D//2)` angle table, since a 2D rotation consumes
+            a *pair* of scalars per angle).
     """
-    if dim % 4 != 0:
-        raise ValueError(f"Embedding dimension {dim} must be divisible by 4 for 2D RoPE")
+    if dim % 8 != 0:
+        raise ValueError(f"Embedding dimension {dim} must be divisible by 8 for 2D RoPE")
 
-    dim_quarter = dim // 4
+    dim_quarter = dim // 8
     half_dim = dim // 2
 
-    # Frequency bands: theta^(-2i/d) for i in [0, dim/4)
+    # Frequency bands: theta^(-2i/d) for i in [0, dim/8)
     freq_bands = 1.0 / (
         theta ** (torch.arange(0, dim_quarter, device=device).float() / dim_quarter)
     )

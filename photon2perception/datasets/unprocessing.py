@@ -105,14 +105,19 @@ def apply_ccm(rgb: torch.Tensor, ccm: torch.Tensor) -> torch.Tensor:
     Inverse (sRGB -> cam): camRGB = inv(CCM) @ sRGB
 
     Args:
-        rgb: (..., 3) input RGB values
+        rgb: (B, 3, H, W) input RGB values (standard PyTorch channel-first
+            image layout, matching every other tensor in this pipeline).
         ccm: (3, 3) color correction matrix
     Returns:
-        out: (..., 3) transformed RGB values
+        out: (B, 3, H, W) transformed RGB values
     """
     ccm = ccm.to(rgb.device).to(rgb.dtype)
-    # (..., 3) @ (3, 3) -> (..., 3)
-    out = torch.matmul(rgb, ccm.T)
+    # Per-pixel matrix-vector product along the channel dim (dim=1):
+    # out[b, i, h, w] = sum_j ccm[i, j] * rgb[b, j, h, w].
+    # Implemented as an einsum rather than reshaping to channel-last +
+    # `torch.matmul`, since that reshape/permute round-trip is both slower
+    # and (as originally written here) easy to get wrong dimension-wise.
+    out = torch.einsum('ij,bjhw->bihw', ccm, rgb)
     return out
 
 
@@ -128,13 +133,17 @@ def white_balance(
     Inverse: sensor_raw = camRGB / wb_gains
 
     Args:
-        rgb: (..., 3) camera RGB values
-        wb_gains: (3,) white balance gains (R, G, B)
+        rgb: (B, 3, H, W) camera RGB values (channel-first).
+        wb_gains: (3,) white balance gains (R, G, B).
         inverse: If True, divide by gains (inverse WB)
     Returns:
-        out: (..., 3) balanced RGB values
+        out: (B, 3, H, W) balanced RGB values
     """
-    wb_gains = wb_gains.to(rgb.device).to(rgb.dtype)
+    # Broadcasting aligns shapes from the right, so a bare (3,) gains
+    # tensor would erroneously line up against the W dimension of a
+    # (B, 3, H, W) image. Reshape to (1, 3, 1, 1) to broadcast over the
+    # channel dim instead.
+    wb_gains = wb_gains.to(rgb.device).to(rgb.dtype).view(1, -1, 1, 1)
     if inverse:
         return rgb / (wb_gains + 1e-8)
     return rgb * wb_gains

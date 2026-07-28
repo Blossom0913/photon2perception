@@ -31,6 +31,21 @@ def cuda_timer(name: str = ''):
         print(f"{name}: {elapsed:.2f} ms")
 
 
+def _synchronize(device: torch.device) -> None:
+    """Device-aware synchronization barrier for accurate wall-clock timing.
+
+    `torch.cuda.synchronize()` unconditionally requires a CUDA build and
+    raises on CPU-only/MPS machines, which broke this module's usability on
+    the CPU-only / Apple Silicon dev machines CLAUDE.md explicitly supports
+    (`pytest tests/test_core.py -k "not test_overfit_tiny_batch"`). MPS has
+    its own synchronize(); CPU execution is already synchronous so no-op.
+    """
+    if device.type == 'cuda':
+        torch.cuda.synchronize()
+    elif device.type == 'mps' and hasattr(torch.mps, 'synchronize'):
+        torch.mps.synchronize()
+
+
 def measure_latency(
     model: nn.Module,
     input_shape: Tuple[int, ...],
@@ -46,15 +61,16 @@ def measure_latency(
         input_shape: Input tensor shape (batch_size, channels, height, width)
         num_warmup: Number of warmup runs (not counted)
         num_runs: Number of measurement runs
-        device: Device to run on
+        device: Device to run on ('cuda', 'mps', or 'cpu')
     Returns:
         Dict with 'mean_latency_ms', 'std_latency_ms', 'fps'
     """
+    device_t = torch.device(device)
     model.eval()
-    model.to(device)
+    model.to(device_t)
 
     # Create dummy input
-    dummy_input = torch.randn(*input_shape, device=device)
+    dummy_input = torch.randn(*input_shape, device=device_t)
 
     # Warmup
     with torch.no_grad():
@@ -62,13 +78,13 @@ def measure_latency(
             _ = model(dummy_input)
 
     # Benchmark
-    torch.cuda.synchronize()
+    _synchronize(device_t)
     latencies = []
     with torch.no_grad():
         for _ in range(num_runs):
             start = time.perf_counter()
             _ = model(dummy_input)
-            torch.cuda.synchronize()
+            _synchronize(device_t)
             end = time.perf_counter()
             latencies.append((end - start) * 1000.0)  # Convert to ms
 
@@ -95,23 +111,35 @@ def measure_memory(
     Args:
         model: The model
         input_shape: Input tensor shape
-        device: Device
+        device: Device ('cuda', 'mps', or 'cpu'). Peak-memory tracking is
+            only available on CUDA (`torch.cuda.max_memory_allocated`);
+            on 'mps'/'cpu' the peak_*_memory_mb fields are reported as 0.0
+            rather than raising, so this function is usable end-to-end on
+            the CPU-only/Apple Silicon dev setups CLAUDE.md documents.
     Returns:
-        Dict with memory metrics in MB
+        Dict with memory metrics in MB (parameter counts are always accurate;
+        peak/reserved memory are CUDA-only and 0.0 elsewhere).
     """
+    device_t = torch.device(device)
     model.eval()
-    model.to(device)
+    model.to(device_t)
 
-    torch.cuda.reset_peak_memory_stats()
-    torch.cuda.empty_cache()
+    is_cuda = device_t.type == 'cuda'
+    if is_cuda:
+        torch.cuda.reset_peak_memory_stats()
+        torch.cuda.empty_cache()
 
-    dummy_input = torch.randn(*input_shape, device=device)
+    dummy_input = torch.randn(*input_shape, device=device_t)
 
     with torch.no_grad():
         _ = model(dummy_input)
 
-    peak_memory = torch.cuda.max_memory_allocated() / (1024 ** 2)  # MB
-    reserved_memory = torch.cuda.max_memory_reserved() / (1024 ** 2)  # MB
+    if is_cuda:
+        peak_memory = torch.cuda.max_memory_allocated() / (1024 ** 2)  # MB
+        reserved_memory = torch.cuda.max_memory_reserved() / (1024 ** 2)  # MB
+    else:
+        peak_memory = 0.0
+        reserved_memory = 0.0
 
     # Count parameters
     total_params = sum(p.numel() for p in model.parameters())

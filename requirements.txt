@@ -14,9 +14,18 @@ pyyaml>=6.0
 matplotlib>=3.5.0
 scipy>=1.7.0
 
+# Dataset loading: photon2perception/datasets/coco_raw_dataset.py
+# (CocoRawDetectionDataset, standalone COCO-format loader used by
+# tools/train.py's data.type='coco', without requiring mmdet/mmseg)
+pycocotools>=2.0.6
+
 # Optional: efficiency metrics
 fvcore>=0.1.5
 # thop>=0.1.1
+
+# Model export / inference: tools/export.py, photon2perception/inference.py
+onnx>=1.14.0
+onnxruntime>=1.15.0
 
 # Optional: OpenMMLab integration (for full dataset + eval support)
 # mmdet>=3.0.0

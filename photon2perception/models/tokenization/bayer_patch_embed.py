@@ -276,7 +276,10 @@ class BayerFineTokenize(nn.Module):
         tokens = {}
         for phase_name, phase_data in phases.items():
             B, _, h, w = phase_data.shape
-            flat = phase_data.view(B, h * w, 1)  # (B, N_pixels, 1)
+            # `phase_data` is a strided slice (e.g. x[:, :, 0::2, 0::2]) and
+            # therefore non-contiguous; `.view()` would raise
+            # "view size is not compatible ... use .reshape() instead".
+            flat = phase_data.reshape(B, h * w, 1)  # (B, N_pixels, 1)
             tokens[phase_name] = self.phase_proj[phase_name](flat)  # (B, N, D)
 
         # Stack phases: (B, N, 4, D)

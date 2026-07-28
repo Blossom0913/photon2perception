@@ -120,7 +120,10 @@ class TestRoPE2D:
     def test_dim_not_divisible_by_4(self):
         from photon2perception.models.position_encoding.rope_2d import RoPE2D
 
-        with pytest.raises(ValueError, match='divisible by 4'):
+        # dim=250 is divisible by neither 4 nor 8; RoPE2D requires the
+        # embedding dim to be divisible by 8 (see precompute_2d_freqs_cis
+        # docstring: D/2 must split evenly into 4 x/y/diag/anti-diag bands).
+        with pytest.raises(ValueError, match='divisible by 8'):
             RoPE2D(dim=250, grid_h=14, grid_w=14)
 
     def test_grid_mismatch(self):
