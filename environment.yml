@@ -1,0 +1,24 @@
+name: photon2perception
+channels:
+  - pytorch
+  - nvidia
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.10
+  - pytorch=2.1.0
+  - torchvision=0.16.0
+  - pytorch-cuda=11.8
+  - numpy>=1.21.0
+  - pyyaml>=6.0
+  - matplotlib>=3.5.0
+  - scipy>=1.7.0
+  - pytest>=7.0.0
+  - pip
+  - pip:
+    - rawpy>=0.17.0
+    - fvcore>=0.1.5
+    # Optional: OpenMMLab
+    # - openmim
+    # - mmdet>=3.3.0
+    # - mmsegmentation>=1.2.0

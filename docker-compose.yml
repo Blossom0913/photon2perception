@@ -1,0 +1,43 @@
+version: '3.8'
+
+services:
+  train:
+    image: photon2perception:latest
+    runtime: nvidia
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - CUDA_VISIBLE_DEVICES=0,1,2,3
+    volumes:
+      - .:/workspace
+      - ./data:/data
+      - ./outputs:/outputs
+    command: python tools/train.py --config configs/detection/photon2percept_det_bayer.yaml
+    shm_size: '16gb'
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 4
+              capabilities: [gpu]
+
+  test:
+    image: photon2perception:latest
+    runtime: nvidia
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=0
+    volumes:
+      - .:/workspace
+    command: python -m pytest tests/test_core.py -v
+    shm_size: '8gb'
+
+  benchmark:
+    image: photon2perception:latest
+    runtime: nvidia
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=0
+    volumes:
+      - .:/workspace
+      - ./outputs:/outputs
+    command: python tools/run_experiments.py dry-run --group ablation
+    shm_size: '8gb'

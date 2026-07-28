@@ -1,0 +1,26 @@
+# Photon2Perception requirements
+# Python 3.8+
+
+# Core
+torch>=2.0.0
+torchvision>=0.15.0
+
+# RAW image loading
+rawpy>=0.17.0
+numpy>=1.21.0
+
+# Training
+pyyaml>=6.0
+matplotlib>=3.5.0
+scipy>=1.7.0
+
+# Optional: efficiency metrics
+fvcore>=0.1.5
+# thop>=0.1.1
+
+# Optional: OpenMMLab integration (for full dataset + eval support)
+# mmdet>=3.0.0
+# mmseg>=1.0.0
+
+# Development
+pytest>=7.0.0

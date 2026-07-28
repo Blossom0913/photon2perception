@@ -1,0 +1,52 @@
+# Photon2Perception Segmentation Training Configuration
+
+task: segmentation
+
+model:
+  img_size: [512, 1024]       # Input size for Cityscapes-style
+  patch_size: 16
+  embed_dim: 768
+  depth: 12
+  num_heads: 12
+  mlp_ratio: 4.0
+  dropout: 0.0
+  attn_dropout: 0.0
+  cfa_pattern: rggb
+  use_rope_2d: true
+  use_directional: false
+  use_sparse_routing: false
+  router_type: saliency
+  keep_ratio: 0.7
+
+data:
+  type: synthetic
+  root_dir: ./data
+  num_classes: 19              # Cityscapes classes
+  batch_size: 4
+  num_workers: 4
+  cfa_pattern: rggb
+  add_noise: true
+  bit_depth: 8
+  condition: normal
+  normalize: true
+  img_scale: [512, 1024]
+
+training:
+  epochs: 80
+  learning_rate: 0.0001
+  weight_decay: 0.0001
+  warmup_epochs: 5
+  lr_schedule: poly             # Polynomial decay for segmentation
+  lr_power: 0.9
+  grad_clip: 1.0
+  mixed_precision: false
+
+loss:
+  seg_loss: ce                  # Segmentation loss: ce, ohem, lovasz
+  aux_loss_weight: 0.4          # Auxiliary loss weight
+  rmi_loss_weight: 0.1          # Region Mutual Information loss (from RawSeg)
+
+efficiency:
+  target_latency_ms: 50
+  target_flops_g: 80
+  target_memory_mb: 6000

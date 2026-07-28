@@ -1,0 +1,68 @@
+# Photon2Perception Detection Training Configuration
+
+# Task settings
+task: detection
+
+# Model configuration
+model:
+  img_size: [512, 512]        # Input image size (H, W), must be even
+  patch_size: 16               # Patch size, must be even
+  embed_dim: 768               # Token embedding dimension
+  depth: 12                    # Number of transformer blocks
+  num_heads: 12                # Number of attention heads
+  mlp_ratio: 4.0               # MLP hidden dimension ratio
+  dropout: 0.0                 # Dropout rate
+  attn_dropout: 0.0            # Attention dropout rate
+  cfa_pattern: rggb            # Bayer CFA pattern
+  use_rope_2d: true            # Enable 2D RoPE
+  use_directional: false       # Enable directional enhancement (ablation)
+  use_sparse_routing: false    # Enable sparse routing (ablation)
+  router_type: saliency        # Router type: saliency, uncertainty, physical
+  keep_ratio: 0.7              # Token keep ratio for sparse routing
+
+# Data configuration
+data:
+  type: synthetic              # Dataset type: real, synthetic
+  root_dir: ./data             # Dataset root directory
+  num_classes: 80              # Number of object classes
+  batch_size: 8                # Batch size per GPU
+  num_workers: 4               # Data loader workers
+  cfa_pattern: rggb            # CFA pattern for unprocessing
+  add_noise: true              # Add synthetic noise
+  bit_depth: 8                 # RAW bit depth
+  condition: normal            # Condition: normal, dark, over_exp
+  normalize: true              # Normalize pixels to [-1, 1]
+  img_scale: [512, 512]        # Image scale for training
+  augmentation:                # Data augmentation settings
+    random_crop: true
+    random_flip: true
+    exposure_jitter: true
+    noise_inject: false         # Only for real RAW datasets
+
+# Training configuration
+training:
+  epochs: 50                   # Total training epochs
+  learning_rate: 0.0001        # Base learning rate
+  weight_decay: 0.0001         # Weight decay
+  warmup_epochs: 5             # Linear warmup epochs
+  lr_schedule: cosine          # LR schedule: cosine, step, constant
+  grad_clip: 1.0               # Gradient clipping
+  mixed_precision: false       # Use AMP mixed precision
+  log_interval: 10             # Log every N batches
+  save_interval: 5             # Save checkpoint every N epochs
+  val_interval: 1              # Validate every N epochs
+
+# Loss configuration
+loss:
+  cls_loss: focal              # Classification loss: focal, ce
+  reg_loss: l1                 # Regression loss: l1, smooth_l1
+  cls_weight: 2.0              # Classification loss weight
+  reg_weight: 1.0              # Regression loss weight
+  focal_alpha: 0.25            # Focal loss alpha
+  focal_gamma: 2.0             # Focal loss gamma
+
+# Efficiency targets
+efficiency:
+  target_latency_ms: 30        # Target inference latency (ms)
+  target_flops_g: 50           # Target FLOPs (GFLOPs)
+  target_memory_mb: 4000       # Target GPU memory (MB)
