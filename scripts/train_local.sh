@@ -10,13 +10,14 @@
 # 与 scripts/run_experiment_batch.sh 的区别：
 #   run_experiment_batch.sh 面向 AutoDL 云端批量跑 36 个论文实验；
 #   train_local.sh 面向单次、交互式的本地/服务器训练（默认使用当前项目自带
-#   的 configs/*.yaml，不依赖 AutoDL 的固定目录布局 /root/autodl-tmp/...）。
+#   的 tasks/{detection,segmentation}/config/*.yaml，不依赖 AutoDL 的固定目录布局
+#   /root/autodl-tmp/...）。
 #
 # 用法：
-#   bash scripts/train_local.sh --config configs/detection/photon2percept_det_bayer.yaml
-#   bash scripts/train_local.sh --config configs/detection/photon2percept_det_bayer.yaml \
+#   bash scripts/train_local.sh --config tasks/detection/config/photon2percept_det_bayer.yaml
+#   bash scripts/train_local.sh --config tasks/detection/config/photon2percept_det_bayer.yaml \
 #       --exp_name my_run --output_dir ./outputs --auto_resume
-#   bash scripts/train_local.sh --config configs/detection/photon2percept_det_bayer.yaml \
+#   bash scripts/train_local.sh --config tasks/detection/config/photon2percept_det_bayer.yaml \
 #       --override training.epochs=20 data.batch_size=4 --no_tensorboard_server
 # ============================================================================
 
@@ -59,10 +60,10 @@ usage() {
   -h, --help                显示本帮助
 
 示例:
-  bash scripts/train_local.sh --config configs/detection/photon2percept_det_bayer.yaml
-  bash scripts/train_local.sh --config configs/segmentation/photon2percept_seg_bayer.yaml \\
+  bash scripts/train_local.sh --config tasks/detection/config/photon2percept_det_bayer.yaml
+  bash scripts/train_local.sh --config tasks/segmentation/config/photon2percept_seg_bayer.yaml \\
       --exp_name seg_run1 --auto_resume
-  bash scripts/train_local.sh --config configs/detection/photon2percept_det_bayer.yaml \\
+  bash scripts/train_local.sh --config tasks/detection/config/photon2percept_det_bayer.yaml \\
       --override training.epochs=20 data.batch_size=4
 EOF
 }

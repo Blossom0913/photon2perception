@@ -126,7 +126,7 @@ run_detection_smoke() {
 
     log_info "运行 tools/train.py (tiny 检测配置, ${EPOCHS} epoch)"
     if $PYTHON_CMD tools/train.py \
-        --config configs/detection/photon2percept_det_bayer.yaml \
+        --config tasks/detection/config/photon2percept_det_bayer.yaml \
         --exp_name debug_detection \
         --output_dir "$OUTPUT_DIR" \
         --no_tensorboard \
@@ -173,7 +173,7 @@ run_segmentation_smoke() {
 
     log_info "运行 tools/train.py (tiny 分割配置, ${EPOCHS} epoch)"
     if $PYTHON_CMD tools/train.py \
-        --config configs/segmentation/photon2percept_seg_bayer.yaml \
+        --config tasks/segmentation/config/photon2percept_seg_bayer.yaml \
         --exp_name debug_segmentation \
         --output_dir "$OUTPUT_DIR" \
         --no_tensorboard \

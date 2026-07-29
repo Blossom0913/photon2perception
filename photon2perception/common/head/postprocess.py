@@ -4,7 +4,7 @@ Detection post-processing: anchor decoding, score thresholding, and NMS.
 `RawDetectionHead` outputs raw per-level classification logits and box
 regression deltas; this module turns those into final
 (boxes, scores, labels) predictions, the format expected by
-`photon2perception.evaluation.metrics.DetectionEvaluator` and by any
+`photon2perception.common.evaluation.metrics.DetectionEvaluator` and by any
 downstream visualization/deployment code.
 
 Kept separate from `DetectionLoss` (which only needs anchors + encode/decode
@@ -19,7 +19,7 @@ from typing import Dict, List, Tuple
 import torch
 import torchvision
 
-from ...losses.detection_loss import decode_boxes, generate_anchors
+from ..loss.detection_loss import decode_boxes, generate_anchors
 
 
 @torch.no_grad()

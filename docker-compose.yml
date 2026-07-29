@@ -11,7 +11,7 @@ services:
       - .:/workspace
       - ./data:/data
       - ./outputs:/outputs
-    command: python tools/train.py --config configs/detection/photon2percept_det_bayer.yaml
+    command: python tools/train.py --config tasks/detection/config/photon2percept_det_bayer.yaml
     shm_size: '16gb'
     deploy:
       resources:

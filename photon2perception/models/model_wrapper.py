@@ -50,8 +50,8 @@ import torch
 import torch.nn as nn
 
 from .backbones.raw_vit import RawViT
-from .heads.detection_head import RawDetectionHead
-from .heads.segmentation_head import RawSegmentationHead
+from ..common.head.detection_head import RawDetectionHead
+from ..common.head.segmentation_head import RawSegmentationHead
 from .necks.fpn_bridge import SimpleFeaturePyramidNeck
 
 
@@ -142,7 +142,7 @@ class PerceptionModel(nn.Module):
 
 def build_perception_model(config: Dict) -> PerceptionModel:
     """Construct a `PerceptionModel` from a full experiment config dict, as
-    loaded from configs/detection/*.yaml or configs/segmentation/*.yaml.
+    loaded from tasks/detection/config/*.yaml or tasks/segmentation/config/*.yaml.
 
     This is the single source of truth for "config dict -> nn.Module" used
     by tools/train.py, tools/eval.py, and tools/export.py, replacing the

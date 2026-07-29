@@ -1,13 +1,13 @@
 """
 Task evaluation metrics: COCO-style mAP for detection, mIoU for segmentation.
 
-`BenchmarkRunner.run_task_benchmark` (evaluation/benchmarks/runner.py) had a
-placeholder returning `{}` with a comment "integrate with mmdet/mmseg
+`BenchmarkRunner.run_task_benchmark` (common/evaluation/benchmarks/runner.py)
+had a placeholder returning `{}` with a comment "integrate with mmdet/mmseg
 evaluation". This module implements standalone, dependency-light versions:
 
 - Detection: uses `pycocotools.cocoeval.COCOeval` if available (the de facto
   standard COCO mAP implementation, already a transitive dependency via
-  `photon2perception.datasets.coco_raw_dataset.CocoRawDetectionDataset`).
+  `photon2perception.common.dataset.coco_raw_dataset.CocoRawDetectionDataset`).
   Falls back to a simple single-IoU-threshold AP computation if
   pycocotools isn't installed, so this module never hard-requires it.
 - Segmentation: mIoU via a running confusion matrix (standard
@@ -212,7 +212,7 @@ class DetectionEvaluator:
         metric -- intended for quick sanity checks during development on
         machines without pycocotools installed.
         """
-        from photon2perception.losses.detection_loss import box_iou
+        from photon2perception.common.loss.detection_loss import box_iou
 
         preds_by_image: Dict[int, List[Dict]] = {}
         for p in self.predictions:

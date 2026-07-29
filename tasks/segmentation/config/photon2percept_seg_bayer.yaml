@@ -21,11 +21,11 @@ model:
 # ----------------------------------------------------------------------------
 # Input/output feature shapes
 # ----------------------------------------------------------------------------
-# See configs/detection/photon2percept_det_bayer.yaml's `features` block for
+# See tasks/detection/config/photon2percept_det_bayer.yaml's `features` block for
 # the full rationale. Regenerate the .pb.txt files whenever `model.img_size`/
 # `patch_size`/`in_chans`/`data.num_classes` change:
 #   python -m photon2perception.utils.feature_spec \
-#       --config configs/segmentation/photon2percept_seg_bayer.yaml \
+#       --config tasks/segmentation/config/photon2percept_seg_bayer.yaml \
 #       --output_dir feature_specs
 features:
   spec_dir: feature_specs

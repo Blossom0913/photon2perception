@@ -266,15 +266,15 @@ for i, exp in enumerate(QUALITATIVE_EXPS):
 class ExperimentRunner:
     """Manages experiment execution."""
 
-    def __init__(self, config_dir: str = './configs', output_dir: str = './outputs'):
+    def __init__(self, config_dir: str = './tasks', output_dir: str = './outputs'):
         self.config_dir = Path(config_dir)
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
     def generate_config(self, exp: ExperimentConfig) -> Dict:
         """Generate merged config for an experiment."""
-        # Load base config
-        base_config_path = self.config_dir / 'detection' / 'photon2percept_det_bayer.yaml'
+        # Load base config (tasks/detection/config/photon2percept_det_bayer.yaml)
+        base_config_path = self.config_dir / 'detection' / 'config' / 'photon2percept_det_bayer.yaml'
 
         import yaml
         with open(base_config_path, 'r') as f:

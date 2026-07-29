@@ -1,7 +1,7 @@
 """
 Segmentation loss: Cross-Entropy + Region Mutual Information (RMI) loss.
 
-Implements the loss referenced in configs/segmentation/photon2percept_seg_bayer.yaml
+Implements the loss referenced in tasks/segmentation/config/photon2percept_seg_bayer.yaml
 (`seg_loss: ce`, `rmi_loss_weight: 0.1`) and used by RawSeg-Net-style designs
 in the reference literature (Lu 2023 RawSeg combines CE + RMI, see
 reference_pdf/summary_notes). RMI models spatial pixel dependencies within

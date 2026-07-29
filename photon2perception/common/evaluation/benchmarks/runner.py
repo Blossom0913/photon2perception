@@ -10,9 +10,9 @@ import torch
 from pathlib import Path
 from typing import Dict, Optional
 import sys
-sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent.parent))
 
-from photon2perception.evaluation.efficiency import full_efficiency_report
+from photon2perception.common.evaluation.efficiency import full_efficiency_report
 
 
 class BenchmarkRunner:

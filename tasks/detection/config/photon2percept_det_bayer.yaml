@@ -33,7 +33,7 @@ model:
 # Regenerate both files any time `model.img_size`/`patch_size`/`in_chans`/
 # `data.num_classes`/neck settings change, via:
 #   python -m photon2perception.utils.feature_spec \
-#       --config configs/detection/photon2percept_det_bayer.yaml \
+#       --config tasks/detection/config/photon2percept_det_bayer.yaml \
 #       --output_dir feature_specs
 # or the wrapper script `scripts/local_feature_exporter.sh --spec_only`.
 features:

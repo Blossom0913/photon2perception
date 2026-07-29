@@ -4,11 +4,12 @@ top of the core model (photon2perception.models.*), which is already
 covered by tests/test_core.py.
 
 Covers:
-- photon2perception.losses.{detection_loss,segmentation_loss}
+- photon2perception.common.loss.{detection_loss,segmentation_loss}
 - photon2perception.models.model_wrapper (PerceptionModel / build_perception_model)
-- photon2perception.utils.{checkpoint,config,distributed,logger}
-- photon2perception.evaluation.{metrics,efficiency}
-- photon2perception.models.heads.postprocess
+- photon2perception.utils.{checkpoint,distributed,logger}
+- photon2perception.common.config
+- photon2perception.common.evaluation.{metrics,efficiency}
+- photon2perception.common.head.postprocess
 - photon2perception.inference (PerceptionInferencer, pytorch/torchscript/
   onnxruntime backends -- CPU only, no GPU/TensorRT required)
 - tools/export.py (TorchScript + ONNX export + numerical parity), invoked
@@ -36,22 +37,22 @@ import yaml
 REPO_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
-from photon2perception.evaluation.efficiency import (
+from photon2perception.common.evaluation.efficiency import (
     compute_input_bandwidth,
     full_efficiency_report,
     measure_latency,
     measure_memory,
 )
-from photon2perception.evaluation.metrics import DetectionEvaluator, SegmentationEvaluator
-from photon2perception.losses.detection_loss import (
+from photon2perception.common.evaluation.metrics import DetectionEvaluator, SegmentationEvaluator
+from photon2perception.common.loss.detection_loss import (
     DetectionLoss,
     box_iou,
     decode_boxes,
     encode_boxes,
     generate_anchors,
 )
-from photon2perception.losses.segmentation_loss import RMILoss, SegmentationLoss
-from photon2perception.models.heads.postprocess import postprocess_detections
+from photon2perception.common.loss.segmentation_loss import RMILoss, SegmentationLoss
+from photon2perception.common.head.postprocess import postprocess_detections
 from photon2perception.models.model_wrapper import PerceptionModel, build_perception_model
 from photon2perception.utils.checkpoint import (
     find_latest_checkpoint,
@@ -60,7 +61,7 @@ from photon2perception.utils.checkpoint import (
     save_checkpoint,
     strip_ddp_prefix,
 )
-from photon2perception.utils.config import apply_cli_overrides, load_config, save_config
+from photon2perception.common.config import apply_cli_overrides, load_config, save_config
 
 
 # ----------------------------------------------------------------------------

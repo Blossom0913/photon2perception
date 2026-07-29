@@ -5,7 +5,7 @@ files) -> training-ready tensors, cached to disk.
 
 Why this exists
 ----------------
-`tools/train.py` currently re-runs the full "load image -> resize ->
+`photon2perception.engine.base_trainer.BaseTrainer` currently re-runs the full "load image -> resize ->
 `UnprocessPipeline` (RGB -> synthetic Bayer RAW) -> Bayer-safe augmentation ->
 normalize" chain on every `__getitem__` call, every epoch. That's the right
 default (it's what gives free "infinite" augmentation variety on synthetic
@@ -20,7 +20,7 @@ data), but it means:
 This script performs that conversion once, up front, and writes fixed-size
 shards of pre-processed tensors (`torch.save`d dicts, or bare `.npy` arrays)
 to `feature_export.output_dir`, plus a `manifest.json` index. It intentionally
-reuses the exact same dataset classes `tools/train.py` uses
+reuses the exact same dataset classes `BaseTrainer.build_dataloaders` uses
 (`CocoRawDetectionDataset`, `CityscapesRawSegmentationDataset`,
 `BaseRAWDataset`) so an exported feature is byte-for-byte what training would
 have produced for that sample (module RNG-driven on-the-fly augmentation,
@@ -29,9 +29,9 @@ per-epoch in `train.py`; what's cached here is the deterministic
 unprocessing step: resize + RGB->Bayer + normalize).
 
 Usage:
-    python tools/export_features.py --config configs/detection/photon2percept_det_bayer.yaml --split train
-    python tools/export_features.py --config configs/detection/photon2percept_det_bayer.yaml --split val --limit 32
-    python tools/export_features.py --config configs/detection/photon2percept_det_bayer.yaml --emit_spec_only
+    python tools/export_features.py --config tasks/detection/config/photon2percept_det_bayer.yaml --split train
+    python tools/export_features.py --config tasks/detection/config/photon2percept_det_bayer.yaml --split val --limit 32
+    python tools/export_features.py --config tasks/detection/config/photon2percept_det_bayer.yaml --emit_spec_only
 
 See also: scripts/local_feature_exporter.sh (a thin CLI wrapper around this
 script for local/AutoDL use).
@@ -48,12 +48,12 @@ import torch
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from photon2perception.datasets.coco_raw_dataset import (
+from photon2perception.common.dataset.coco_raw_dataset import (
     CityscapesRawSegmentationDataset,
     CocoRawDetectionDataset,
 )
-from photon2perception.datasets.base_raw_dataset import BaseRAWDataset
-from photon2perception.utils.config import apply_cli_overrides, load_config
+from photon2perception.common.dataset.base_raw_dataset import BaseRAWDataset
+from photon2perception.common.config import apply_cli_overrides, load_config
 from photon2perception.utils.feature_spec import (
     load_pbtxt,
     write_feature_specs_for_config,
@@ -84,7 +84,7 @@ def parse_args():
 
 
 # ----------------------------------------------------------------------------
-# Dataset construction (mirrors tools/train.py::build_dataloaders, single-split)
+# Dataset construction (mirrors BaseTrainer.build_dataloaders, single-split)
 # ----------------------------------------------------------------------------
 
 def build_export_dataset(config: Dict, split: str):

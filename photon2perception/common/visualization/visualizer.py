@@ -1,17 +1,22 @@
 #!/usr/bin/env python3
 """
-Visualization tools for qualitative analysis (Section 4.6).
+Shared visualization tools for qualitative analysis (Section 4.6).
 
 Generates:
 - Token routing heatmap overlays
 - Attention distribution maps
 - Degradation-scene selective focusing visualizations
 - RAW-native vs RGB prediction comparisons
+
+Task-agnostic (no `detection`/`segmentation` branching), so it lives under
+`photon2perception.common.visualization` alongside the other shared
+infrastructure (`common.dataset`, `common.loss`, `common.head`,
+`common.evaluation`). `tasks/{detection,segmentation}/visualizer.py`
+re-export the subset relevant to each task, mirroring the reference
+`planning_training_pipeline/tasks/{task}/visualizer.py` layout.
 """
 
-import sys
 from pathlib import Path
-sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import torch
 import numpy as np

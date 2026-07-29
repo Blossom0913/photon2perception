@@ -1,7 +1,7 @@
 """
 Detection loss: Focal loss (classification) + L1/GIoU loss (regression).
 
-Implements the loss described in configs/detection/photon2percept_det_bayer.yaml
+Implements the loss described in tasks/detection/config/photon2percept_det_bayer.yaml
 (`cls_loss: focal`, `reg_loss: l1`) and referenced in CLAUDE.md's "Known gaps"
 (tools/train.py previously used a dummy `loss = cls_token.sum() * 0.0`).
 

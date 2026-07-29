@@ -46,7 +46,7 @@ Example:
     from photon2perception.inference import PerceptionInferencer
 
     inferencer = PerceptionInferencer(
-        config_path='configs/detection/photon2percept_det_bayer.yaml',
+        config_path='tasks/detection/config/photon2percept_det_bayer.yaml',
         backend='onnxruntime',
         weights_path='exported/det_bayer.onnx',
     )
@@ -60,10 +60,10 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 import numpy as np
 import torch
 
-from .models.heads.postprocess import postprocess_detections
+from .common.head.postprocess import postprocess_detections
 from .models.model_wrapper import PerceptionModel, build_perception_model
 from .utils.checkpoint import load_weights_only
-from .utils.config import ConfigDict, load_config
+from .common.config import ConfigDict, load_config
 
 BACKENDS = ('pytorch', 'torchscript', 'onnxruntime', 'tensorrt')
 
@@ -291,7 +291,7 @@ class PerceptionInferencer:
             local CUDA GPU by construction.
         score_thresh, nms_thresh, max_detections: Detection post-processing
             parameters, forwarded to
-            `photon2perception.models.heads.postprocess.postprocess_detections`.
+            `photon2perception.common.head.postprocess.postprocess_detections`.
             Ignored for segmentation models.
         onnx_providers: Optional explicit onnxruntime execution provider
             list (e.g. `['CANNExecutionProvider', 'CPUExecutionProvider']`
@@ -455,7 +455,7 @@ class PerceptionInferencer:
         latency for this inferencer's configured backend, using a random
         dummy input of `self.img_size`. For backend-forward-only timing
         (no postprocessing/NMS overhead), see
-        `photon2perception.evaluation.efficiency.measure_latency`, which
+        `photon2perception.common.evaluation.efficiency.measure_latency`, which
         benchmarks the eager `PerceptionModel` directly.
         """
         dummy = np.random.randn(1, self.in_chans, *self.img_size).astype(np.float32)

@@ -17,22 +17,38 @@ photon2perception/
 ├── reference_pdf/                     # ~19 source papers (PDFs) on RAW perception, ISP, and related topics
 │   └── summary_notes/                 # Chinese-language summaries of each paper
 ├── photon2perception/                 # Core Python package
-│   ├── models/
+│   ├── models/                        # Shared model backbone/neck (used by all tasks)
 │   │   ├── tokenization/              # BayerPatchEmbed, BayerFineTokenize
 │   │   ├── position_encoding/         # RoPE2D, CFAwareRoPE2D, DirectionalEnhance
 │   │   ├── routing/                   # SaliencyRouter, UncertaintyRouter, PhysicalPriorRouter
 │   │   ├── backbones/                 # RawViT (RAW-adapted Vision Transformer; attn_backend sdpa/flash/math)
 │   │   ├── necks/                     # SimpleFeaturePyramidNeck (ViTDet-style 1D tokens -> multi-scale FPN)
-│   │   ├── heads/                     # RawDetectionHead, RawSegmentationHead, postprocess (NMS/argmax)
 │   │   └── model_wrapper.py           # PerceptionModel + build_perception_model (single source of truth)
-│   ├── datasets/                      # BaseRAWDataset, CocoRawDetectionDataset, CityscapesRawSegmentationDataset, UnprocessPipeline
-│   │   └── raw_transforms/            # Bayer-safe augmentations
-│   ├── losses/                        # DetectionLoss (focal+L1/GIoU), SegmentationLoss (CE+RMI)
-│   ├── evaluation/                    # DetectionEvaluator (mAP), SegmentationEvaluator (mIoU), efficiency.py
-│   ├── utils/                         # config, checkpoint, distributed (DDP), logger, registry
+│   ├── common/                        # Shared, task-agnostic infrastructure (mirrors the reference
+│   │   │                               # planning_training_pipeline/{common,dataset,loss,head,evaluation}/ layout)
+│   │   ├── config.py                  # Config loading: _base_ inheritance, CLI dotted-key overrides
+│   │   ├── dataset/                   # BaseRAWDataset, CocoRawDetectionDataset, CityscapesRawSegmentationDataset, UnprocessPipeline
+│   │   │   └── raw_transforms/        # Bayer-safe augmentations
+│   │   ├── loss/                      # DetectionLoss (focal+L1/GIoU), SegmentationLoss (CE+RMI)
+│   │   ├── head/                      # RawDetectionHead, RawSegmentationHead, postprocess (NMS/argmax)
+│   │   ├── evaluation/                # DetectionEvaluator (mAP), SegmentationEvaluator (mIoU), efficiency.py
+│   │   └── visualization/             # Shared qualitative-analysis plotting (routing heatmaps, attention maps)
+│   ├── engine/                        # Task-agnostic training/eval engine
+│   │   ├── base_trainer.py            # BaseTrainer: dataloaders, optimizer/scheduler, train/val loop, checkpointing
+│   │   └── base_evaluator.py          # BaseEvaluator: checkpoint loading, dataloaders, efficiency report
+│   ├── utils/                         # checkpoint, distributed (DDP), logger, registry, feature_spec
 │   └── inference.py                   # PerceptionInferencer: pytorch/torchscript/onnxruntime/tensorrt backends
-├── configs/                           # YAML config files (detection, segmentation)
-├── tools/                             # train.py, eval.py, export.py, run_experiments.py, visualize.py
+├── tasks/                             # Per-task training pipelines (self-contained, mirrors the reference
+│   │                                   # planning_training_pipeline/tasks/{task_name}/ layout)
+│   ├── detection/
+│   │   ├── config/                    # photon2percept_det_bayer.yaml
+│   │   ├── model.py                   # build_detection_model (thin wrapper over build_perception_model)
+│   │   ├── trainer.py                 # DetectionTrainer(BaseTrainer)
+│   │   ├── evaluator.py               # DetectionTaskEvaluator(BaseEvaluator) -- COCO mAP
+│   │   ├── visualizer.py              # Re-exports photon2perception.common.visualization
+│   │   └── scripts/train.sh           # Thin wrapper around scripts/train_local.sh
+│   └── segmentation/                  # Same layout as detection/, for the segmentation task (mIoU)
+├── tools/                             # train.py, eval.py, export.py, export_features.py, run_experiments.py, visualize.py
 ├── tests/                             # Unit tests: test_core.py (model/arch), test_infra.py (train/eval/export/infer pipeline)
 ├── scripts/                           # AutoDL setup & batch experiment scripts
 │   ├── setup_autodl.sh                # One-click AutoDL environment setup
@@ -73,7 +89,7 @@ construct models via `build_perception_model(config)` rather than instantiating 
 2. **2D RoPE** splits embedding into 4 equal parts: x-axis, y-axis, diagonal, anti-diagonal frequencies. It is applied once over the full `embed_dim` (all heads share the same rotation, per `apply_shared_rope_multihead` in `raw_vit.py`), and only to patch tokens — the CLS token is split off before rotation and re-concatenated after, since it has no 2D spatial position.
 3. **Sparse routing** uses a gated combination of learned saliency + physical prior (local variance in RAW values). The `PhysicalPriorRouter` is the key differentiator from generic token pruning. **Important:** routing is only active during `.eval()`/inference if the backbone was built with `route_at_inference=True` (default `False`, for backward compatibility). Check `PerceptionModel.routing_active` before assuming an exported/deployed model actually runs sparse — `tools/export.py` asserts on this and fails loudly for a misconfigured `use_sparse_routing=True, route_at_inference=False` model, since that would silently export a dense graph.
 4. **DirectionalEnhance** is gated with `tanh(gate)` and initialized at 0 (disabled at start).
-5. **All experiments must report efficiency alongside accuracy** — latency, FLOPs, memory, and input bandwidth are first-class metrics (`photon2perception/evaluation/efficiency.py`, CUDA/MPS/CPU-safe — peak memory is CUDA-only and reported as 0.0 elsewhere rather than raising).
+5. **All experiments must report efficiency alongside accuracy** — latency, FLOPs, memory, and input bandwidth are first-class metrics (`photon2perception/common/evaluation/efficiency.py`, CUDA/MPS/CPU-safe — peak memory is CUDA-only and reported as 0.0 elsewhere rather than raising).
 6. **Attention backend is switchable** (`attn_backend`: `'sdpa'` default / `'flash'` / `'math'`) via `RawViT.set_attn_backend()` — useful to force `'math'` before ONNX export/NPU targets that don't support the fused SDPA op, while using `'sdpa'`/`'flash'` for actual GPU training.
 
 ### Running the code
@@ -112,16 +128,16 @@ python tools/run_experiments.py dry-run --exp-id E01
 # Train a model (supports CPU/MPS/single-GPU/DDP multi-GPU; auto-resume,
 # mixed precision, checkpointing, and console+file[+TB/W&B] logging --
 # see tools/train.py's module docstring)
-python tools/train.py --config configs/detection/photon2percept_det_bayer.yaml
-python tools/train.py --config configs/detection/photon2percept_det_bayer.yaml \
+python tools/train.py --config tasks/detection/config/photon2percept_det_bayer.yaml
+python tools/train.py --config tasks/detection/config/photon2percept_det_bayer.yaml \
     --override training.epochs=5 data.batch_size=2 --output_dir ./outputs/debug
 
 # Evaluate a checkpoint (COCO mAP / mIoU + efficiency report)
-python tools/eval.py --config configs/detection/photon2percept_det_bayer.yaml \
+python tools/eval.py --config tasks/detection/config/photon2percept_det_bayer.yaml \
     --checkpoint outputs/photon2percept_det_bayer/checkpoint_best.pth
 
 # Export to TorchScript + ONNX (with numerical parity verification)
-python tools/export.py --config configs/detection/photon2percept_det_bayer.yaml \
+python tools/export.py --config tasks/detection/config/photon2percept_det_bayer.yaml \
     --checkpoint outputs/photon2percept_det_bayer/checkpoint_best.pth \
     --format both --output exported/det_bayer
 
@@ -135,7 +151,7 @@ python tools/visualize.py
 from photon2perception.inference import PerceptionInferencer
 
 inferencer = PerceptionInferencer(
-    config_path='configs/detection/photon2percept_det_bayer.yaml',
+    config_path='tasks/detection/config/photon2percept_det_bayer.yaml',
     backend='onnxruntime',  # or 'pytorch' / 'torchscript' / 'tensorrt'
     weights_path='exported/det_bayer.onnx',
 )
@@ -226,7 +242,7 @@ docker run --gpus all -it -v $(pwd):/workspace photon2perception:latest bash
 # Train a model
 docker run --gpus all -v $(pwd):/workspace -v /path/to/data:/data \
     photon2perception:latest \
-    python tools/train.py --config configs/detection/photon2percept_det_bayer.yaml
+    python tools/train.py --config tasks/detection/config/photon2percept_det_bayer.yaml
 ```
 
 **docker-compose.yml** (for multi-GPU setups):
@@ -244,7 +260,7 @@ services:
       - .:/workspace
       - ./data:/data
       - ./outputs:/outputs
-    command: python tools/train.py --config configs/detection/photon2percept_det_bayer.yaml
+    command: python tools/train.py --config tasks/detection/config/photon2percept_det_bayer.yaml
     shm_size: '16gb'
     deploy:
       resources:
@@ -341,10 +357,10 @@ inference — is implemented and covered by 82 passing unit tests (`tests/test_c
 `tests/test_infra.py`) plus an end-to-end smoke test (tiny COCO-format dataset through
 train → eval → export → inference on CPU). What used to be placeholder stubs is now:
 
-1. **Real losses** (`photon2perception/losses/`): `DetectionLoss` (focal classification + L1/GIoU box
+1. **Real losses** (`photon2perception/common/loss/`): `DetectionLoss` (focal classification + L1/GIoU box
    regression, anchor-based) and `SegmentationLoss` (CrossEntropy + RMI, optional auxiliary head loss).
-   Wired into `tools/train.py` via `build_loss(config)`.
-2. **Real dataset loading** (`photon2perception/datasets/coco_raw_dataset.py`): `CocoRawDetectionDataset`
+   Wired into `photon2perception.engine.base_trainer.BaseTrainer.build_loss()`.
+2. **Real dataset loading** (`photon2perception/common/dataset/coco_raw_dataset.py`): `CocoRawDetectionDataset`
    and `CityscapesRawSegmentationDataset`, standalone loaders (no mmdet/mmseg dependency) that read
    COCO-format / Cityscapes-format annotations and synthesize Bayer RAW on-the-fly via `UnprocessPipeline`.
    Selected via `data.type: coco|cityscapes|real` in the YAML config (`synthetic` is a back-compat alias).
@@ -355,11 +371,12 @@ train → eval → export → inference on CPU). What used to be placeholder stu
    last hidden state's patch tokens directly. `build_perception_model(config)` is the single
    config-dict-to-nn.Module constructor used by train/eval/export — do not hand-assemble
    backbone+neck+head elsewhere.
-4. **Real validation loop**: `build_dataloaders` in `tools/train.py` returns a proper `val_loader`;
-   `tools/eval.py` runs full COCO mAP (`DetectionEvaluator`, pycocotools-based with an approx-AP50
-   fallback) or mIoU (`SegmentationEvaluator`) plus an efficiency report.
+4. **Real validation loop**: `BaseTrainer.build_dataloaders()` (`photon2perception/engine/base_trainer.py`)
+   returns a proper `val_loader`; `tools/eval.py` runs full COCO mAP (`DetectionEvaluator`, pycocotools-based
+   with an approx-AP50 fallback) or mIoU (`SegmentationEvaluator`) plus an efficiency report via
+   `tasks/{detection,segmentation}/evaluator.py`'s `*TaskEvaluator(BaseEvaluator)` subclasses.
 5. **Mixed precision wired**: `training.mixed_precision: true` wraps the forward pass in
-   `torch.autocast` + `GradScaler` in `tools/train.py`.
+   `torch.autocast` + `GradScaler` in `BaseTrainer.train_one_epoch()`.
 6. **Unified logging**: `photon2perception/utils/logger.py`'s `ExperimentLogger` writes to
    console + a log file, with optional TensorBoard/W&B backends (`--use_wandb`), replacing bare `print()`.
 
@@ -374,7 +391,7 @@ train → eval → export → inference on CPU). What used to be placeholder stu
 - **ONNX export defaults to the legacy TorchScript-tracing exporter** (`dynamo=False`) for broader
   onnxruntime/vendor-NPU-toolchain compatibility; pass `--onnx_dynamo` to opt into the newer
   torch.export-based exporter once a target toolchain is confirmed to support it.
-- **`data.batch_size` and full-scale configs**: `configs/{detection,segmentation}/*.yaml` use
+- **`data.batch_size` and full-scale configs**: `tasks/{detection,segmentation}/config/*.yaml` use
   production-scale settings (`embed_dim: 768`, `img_size: [512, 512]`, real COCO paths under
   `data.train_img_dir`/`train_ann_file`). For local CPU iteration/smoke-testing, override with a tiny
   config (small `embed_dim`/`img_size`/`depth`, `data.batch_size=1-2`) rather than running the full
@@ -389,12 +406,23 @@ When asked to help with the research:
 - When discussing experimental design, reference the ablation structure in README.md §4.3.
 
 When asked to change code:
-- Run `python -m pytest tests/ -v` after any change under `photon2perception/` or `tools/` — the 82-test
-  suite (`test_core.py` + `test_infra.py`) is fast (~10s on CPU) and covers both architecture correctness
-  and the full train/eval/export/inference pipeline, so it catches regressions immediately.
+- Run `python -m pytest tests/ -v` after any change under `photon2perception/`, `tasks/`, or `tools/` — the
+  82-test suite (`test_core.py` + `test_infra.py`) is fast (~10s on CPU) and covers both architecture
+  correctness and the full train/eval/export/inference pipeline, so it catches regressions immediately.
 - Always go through `build_perception_model(config)` (`photon2perception/models/model_wrapper.py`) to
   construct a model, rather than instantiating `RawViT`/heads/neck directly — this is what keeps
   `tools/train.py`, `tools/eval.py`, `tools/export.py`, and `photon2perception/inference.py` in sync.
+- Training/eval logic lives in `photon2perception/engine/{base_trainer,base_evaluator}.py`
+  (`BaseTrainer`/`BaseEvaluator`, task-agnostic: dataloaders, optimizer/scheduler, the train/val loop,
+  checkpointing, efficiency benchmarking) plus a thin per-task subclass in
+  `tasks/{detection,segmentation}/{trainer,evaluator}.py`. `tools/train.py`/`tools/eval.py` are CLI-only
+  (`parse_args` + pick the right task subclass + call `.fit()`/`.evaluate()`) — put new *shared* training
+  behavior in `BaseTrainer`/`BaseEvaluator`, and new *task-specific* behavior in the `tasks/{task}/`
+  subclass, not in the `tools/*.py` CLI scripts themselves.
+- Shared, task-agnostic infrastructure (config loading, dataset loaders, losses, task heads, evaluation
+  metrics, visualization) lives under `photon2perception/common/` (`common.config`, `common.dataset`,
+  `common.loss`, `common.head`, `common.evaluation`, `common.visualization`); task-specific config
+  files/wiring live under `tasks/{detection,segmentation}/`.
 - If you touch anything that affects the forward pass under tracing (control flow depending on a tensor
   value, `.item()`, Python-side shape branching), re-run the export smoke tests
   (`tests/test_infra.py::TestExportScript`) specifically — they exercise `tools/export.py` end-to-end via

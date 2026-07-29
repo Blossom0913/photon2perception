@@ -48,7 +48,7 @@ This script still *asserts* `routing_active` compatibility (see
 inference (because `route_at_inference=False`) fails loudly instead of
 producing an export that doesn't reflect the intended efficiency profile.
 
-Detection post-processing (`photon2perception.models.heads.postprocess.
+Detection post-processing (`photon2perception.common.head.postprocess.
 postprocess_detections`) is intentionally **not** part of the exported
 graph: it does score-thresholding + NMS, both classic data-dependent-shape
 operations that are a poor fit for a static graph. Exported detection
@@ -58,17 +58,17 @@ it) after invoking the exported model.
 
 Examples:
     # TorchScript
-    python tools/export.py --config configs/detection/photon2percept_det_bayer.yaml \\
+    python tools/export.py --config tasks/detection/config/photon2percept_det_bayer.yaml \\
         --checkpoint outputs/photon2percept_det_bayer/checkpoint_best.pth \\
         --format torchscript --output exported/det_bayer.pt
 
     # ONNX (opset 17, dynamic batch dim)
-    python tools/export.py --config configs/segmentation/photon2percept_seg_bayer.yaml \\
+    python tools/export.py --config tasks/segmentation/config/photon2percept_seg_bayer.yaml \\
         --checkpoint outputs/photon2percept_seg_bayer/checkpoint_best.pth \\
         --format onnx --output exported/seg_bayer.onnx --opset 17 --dynamic_batch
 
     # Export both formats and skip randomly-initialized-weights warning
-    python tools/export.py --config configs/detection/photon2percept_det_bayer.yaml \\
+    python tools/export.py --config tasks/detection/config/photon2percept_det_bayer.yaml \\
         --format both --output exported/det_bayer
 """
 
@@ -84,7 +84,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from photon2perception.models.model_wrapper import PerceptionModel, build_perception_model
 from photon2perception.utils.checkpoint import load_weights_only
-from photon2perception.utils.config import apply_cli_overrides, load_config
+from photon2perception.common.config import apply_cli_overrides, load_config
 
 EXPORT_FORMATS = ('torchscript', 'onnx', 'both')
 

@@ -196,7 +196,7 @@ class TestUnprocessing:
     """Test RGB-to-Bayer unprocessing pipeline."""
 
     def test_basic_unprocessing(self):
-        from photon2perception.datasets.unprocessing import UnprocessPipeline
+        from photon2perception.common.dataset.unprocessing import UnprocessPipeline
 
         unprocess = UnprocessPipeline(pattern='rggb', add_noise=False)
         srgb = torch.rand(2, 3, 256, 256)
@@ -208,7 +208,7 @@ class TestUnprocessing:
         assert bayer.max() <= 1.0
 
     def test_with_noise(self):
-        from photon2perception.datasets.unprocessing import UnprocessPipeline
+        from photon2perception.common.dataset.unprocessing import UnprocessPipeline
 
         unprocess = UnprocessPipeline(
             pattern='rggb', add_noise=True,
@@ -222,7 +222,7 @@ class TestUnprocessing:
         assert not torch.allclose(bayer_clean, bayer_noisy)
 
     def test_intermediates(self):
-        from photon2perception.datasets.unprocessing import UnprocessPipeline
+        from photon2perception.common.dataset.unprocessing import UnprocessPipeline
 
         unprocess = UnprocessPipeline(pattern='rggb', add_noise=True)
         srgb = torch.rand(1, 3, 256, 256)
@@ -236,7 +236,7 @@ class TestUnprocessing:
         assert 'bayer_noisy' in intermediates
 
     def test_bayer_mosaic(self):
-        from photon2perception.datasets.unprocessing import bayer_mosaic
+        from photon2perception.common.dataset.unprocessing import bayer_mosaic
 
         rgb = torch.ones(1, 3, 4, 4)
         bayer = bayer_mosaic(rgb, pattern='rggb')
@@ -252,7 +252,7 @@ class TestMultiConditionUnprocess:
     """Test multi-condition unprocessing."""
 
     def test_conditions(self):
-        from photon2perception.datasets.unprocessing import MultiConditionUnprocess
+        from photon2perception.common.dataset.unprocessing import MultiConditionUnprocess
 
         srgb = torch.rand(1, 3, 256, 256)
 

@@ -3,9 +3,9 @@ Feature-spec (`.pb.txt`) read/write utilities.
 
 Why this exists
 ----------------
-`configs/{detection,segmentation}/*.yaml` describe the *model* (embed_dim,
-depth, ...) but say nothing machine-readable about the exact tensors the
-model consumes/produces -- their names, shapes, and dtypes. That
+`tasks/{detection,segmentation}/config/*.yaml` describe the *model*
+(embed_dim, depth, ...) but say nothing machine-readable about the exact
+tensors the model consumes/produces -- their names, shapes, and dtypes. That
 information is needed by:
 
 - `tools/export_features.py` (this project's feature exporter), to know
@@ -42,7 +42,7 @@ provides:
 - `dump_pbtxt` / `load_pbtxt` to write/read the `.pb.txt` text format above.
 - `build_input_feature_specs(config)` / `build_output_feature_specs(config)`
   to derive the canonical I/O feature specs directly from an experiment
-  config dict (`configs/**/*.yaml`), so the `.pb.txt` files are always
+  config dict (`tasks/**/config/*.yaml`), so the `.pb.txt` files are always
   regenerable and never hand-drift from the model definition.
 """
 
@@ -323,7 +323,7 @@ def _main():
     """CLI: `python -m photon2perception.utils.feature_spec --config <cfg.yaml> --output_dir <dir>`."""
     import argparse
 
-    from .config import load_config
+    from ..common.config import load_config
 
     parser = argparse.ArgumentParser(description="Generate input/output feature-spec .pb.txt files")
     parser.add_argument('--config', type=str, required=True)

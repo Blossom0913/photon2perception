@@ -10,10 +10,10 @@
 #   `.pb.txt` 特征说明文件（见 photon2perception/utils/feature_spec.py）。
 #
 # 用法：
-#   bash scripts/local_feature_exporter.sh --config configs/detection/photon2percept_det_bayer.yaml
-#   bash scripts/local_feature_exporter.sh --config configs/detection/photon2percept_det_bayer.yaml --split val
-#   bash scripts/local_feature_exporter.sh --config configs/detection/photon2percept_det_bayer.yaml --spec_only
-#   bash scripts/local_feature_exporter.sh --config configs/detection/photon2percept_det_bayer.yaml \
+#   bash scripts/local_feature_exporter.sh --config tasks/detection/config/photon2percept_det_bayer.yaml
+#   bash scripts/local_feature_exporter.sh --config tasks/detection/config/photon2percept_det_bayer.yaml --split val
+#   bash scripts/local_feature_exporter.sh --config tasks/detection/config/photon2percept_det_bayer.yaml --spec_only
+#   bash scripts/local_feature_exporter.sh --config tasks/detection/config/photon2percept_det_bayer.yaml \
 #       --limit 32 --output_dir /tmp/feat_debug   # 冒烟测试：只导出前 32 条样本
 #
 # 环境：
@@ -43,7 +43,7 @@ usage() {
 用法: bash scripts/local_feature_exporter.sh --config <config.yaml> [选项]
 
 必需参数:
-  --config <path>       实验配置文件 (configs/detection/*.yaml 或 configs/segmentation/*.yaml)
+  --config <path>       实验配置文件 (tasks/detection/config/*.yaml 或 tasks/segmentation/config/*.yaml)
 
 可选参数:
   --split <train|val>   要导出的数据集划分 (默认: train)
@@ -56,9 +56,9 @@ usage() {
   -h, --help            显示本帮助
 
 示例:
-  bash scripts/local_feature_exporter.sh --config configs/detection/photon2percept_det_bayer.yaml
-  bash scripts/local_feature_exporter.sh --config configs/detection/photon2percept_det_bayer.yaml --split val
-  bash scripts/local_feature_exporter.sh --config configs/detection/photon2percept_det_bayer.yaml --spec_only
+  bash scripts/local_feature_exporter.sh --config tasks/detection/config/photon2percept_det_bayer.yaml
+  bash scripts/local_feature_exporter.sh --config tasks/detection/config/photon2percept_det_bayer.yaml --split val
+  bash scripts/local_feature_exporter.sh --config tasks/detection/config/photon2percept_det_bayer.yaml --spec_only
 EOF
 }
 
